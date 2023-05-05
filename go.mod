@@ -2,7 +2,7 @@ module github.com/1-samuel/owl-scraper
 
 go 1.20
 
-require go.mongodb.org/mongo-driver v1.11.4
+require go.mongodb.org/mongo-driver v1.11.6
 
 require (
 	github.com/golang/snappy v0.0.1 // indirect
