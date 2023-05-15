@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,7 +15,12 @@ import (
 
 func main() {
 
-	opts := options.Client().ApplyURI("mongodb://root:example@localhost:27017")
+	uri := os.Getenv("MONGODB_URI")
+	if uri == "" {
+		log.Fatal("You must set your 'MONGODB_URI' environmental variable. See\n\t https://www.mongodb.com/docs/drivers/go/current/usage-examples/#environment-variable")
+	}
+
+	opts := options.Client().ApplyURI(uri)
 	// Create a new client and connect to the server
 	dbClient, err := mongo.Connect(context.TODO(), opts)
 	if err != nil {
