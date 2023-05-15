@@ -2,6 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -21,12 +27,39 @@ func main() {
 	}()
 
 	database := dbClient.Database("owl")
-	collection := database.Collection("matches")
 
-	repo := MongodbRepo{coll: collection}
+	repo := MongodbRepo{db: database}
 	scraper := Scraper{
 		repo: repo,
 	}
 
-	scraper.start()
+	activeMatchTicker := time.NewTicker(time.Minute)
+	dailyTicker := time.NewTicker(time.Hour * 24)
+	fmt.Println("Started!")
+
+	go func() {
+		for {
+			select {
+			case <-activeMatchTicker.C:
+				if scraper.isMatchActive() {
+					scraper.activeMatch()
+				}
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-dailyTicker.C:
+				scraper.start()
+			}
+		}
+	}()
+
+	go scraper.start()
+
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
+	<-done // Will block here until user hits ctrl+c
 }

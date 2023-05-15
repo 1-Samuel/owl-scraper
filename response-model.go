@@ -5,6 +5,31 @@ import (
 	"time"
 )
 
+type ActiveMatchResponse struct {
+	Uid         string `json:"uid"`
+	Competitors []struct {
+		Id        int    `json:"id"`
+		LongName  string `json:"longName"`
+		ShortName string `json:"shortName"`
+		IconUrl   string `json:"iconUrl"`
+		Score     int    `json:"score"`
+		Color     string `json:"color"`
+	} `json:"competitors"`
+	Status      string `json:"status"`
+	StatusTexts struct {
+		LiveStatusText    string `json:"liveStatusText"`
+		PendingStatusText string `json:"pendingStatusText"`
+	} `json:"statusTexts"`
+	TimeToMatch int      `json:"timeToMatch"`
+	LinkToMatch string   `json:"linkToMatch"`
+	IsEncore    bool     `json:"isEncore"`
+	MatchDate   unixTime `json:"matchDate"`
+}
+
+type ActiveMatchesResponse struct {
+	Data []ActiveMatchResponse `json:"data"`
+}
+
 func convertTeams(match Matches) []Team {
 	teams := make([]Team, 2)
 	for i := 0; i < 2; i++ {
@@ -23,6 +48,23 @@ func convertTeams(match Matches) []Team {
 	return teams
 }
 
+func convertTeamsColored(match ActiveMatchResponse) []TeamColored {
+	teams := make([]TeamColored, 2)
+	for i := 0; i < 2; i++ {
+		team := TeamColored{
+			Team: Team{
+				Name:            match.Competitors[i].LongName,
+				AbbreviatedName: match.Competitors[i].ShortName,
+				Icon:            match.Competitors[i].IconUrl,
+				Score:           match.Competitors[i].Score,
+			},
+			Color: match.Competitors[i].Color,
+		}
+		teams[i] = team
+	}
+	return teams
+}
+
 func convertMatch(match Matches, teams []Team, event Events) Match {
 	return Match{
 		ID:     match.ID,
@@ -32,7 +74,6 @@ func convertMatch(match Matches, teams []Team, event Events) Match {
 		Start:  time.Time(match.StartDate),
 		End:    time.Time(match.EndDate),
 		Event:  event.EventBanner.Title,
-		Link:   match.BroadcastChannels[0].Link.Href,
 	}
 }
 
