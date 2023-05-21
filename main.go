@@ -35,9 +35,7 @@ func main() {
 	database := dbClient.Database("owl")
 
 	repo := MongodbRepo{db: database}
-	scraper := Scraper{
-		repo: repo,
-	}
+	scraper := New(repo)
 
 	activeMatchTicker := time.NewTicker(time.Minute)
 	dailyTicker := time.NewTicker(time.Hour * 24)

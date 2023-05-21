@@ -14,19 +14,27 @@ type Repository interface {
 	PersistActive(activeMatch ActiveMatch) error
 }
 
-type Scraper struct {
+type scraper struct {
 	repo        Repository
 	matchCount  int
 	pageCount   int
 	matchActive bool
+	seenMatches map[string]bool
 }
 
-func (s *Scraper) start() {
+func New(repo Repository) *scraper {
+	return &scraper{
+		repo:        repo,
+		seenMatches: make(map[string]bool),
+	}
+}
+
+func (s *scraper) start() {
 	s.fetch(1)
 	log.Printf("Fetched %d matches from %d pages", s.matchCount, s.pageCount)
 }
 
-func (s *Scraper) activeMatch() {
+func (s *scraper) activeMatch() {
 	url := "https://pk0yccosw3.execute-api.us-east-2.amazonaws.com/production/v2/content-types/match-ticker/?locale=en-us"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -73,12 +81,17 @@ func (s *Scraper) activeMatch() {
 		if err != nil {
 			panic(err)
 		}
-		log.Printf("Found active match %s %d:%d %s in %s", match.Teams[0].AbbreviatedName, match.Teams[0].Score, match.Teams[1].Score, match.Teams[1].AbbreviatedName, time.Duration(match.TimeToMatch)*time.Millisecond)
+		if !s.seenMatches[match.UID] {
+			s.seenMatches[match.UID] = true
+			s.start()
+			log.Printf("New active match: %s - %s at %s", match.Teams[0].AbbreviatedName, match.Teams[1].AbbreviatedName, match.MatchDate)
+		}
+		log.Printf("Found active match %s %d:%d %s at %s", match.Teams[0].AbbreviatedName, match.Teams[0].Score, match.Teams[1].Score, match.Teams[1].AbbreviatedName, match.MatchDate)
 	}
 
 }
 
-func (s *Scraper) fetch(weekNumber int) {
+func (s *scraper) fetch(weekNumber int) {
 	url := s.generateUrl(weekNumber)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -127,13 +140,13 @@ func (s *Scraper) fetch(weekNumber int) {
 	}
 }
 
-func (s *Scraper) generateUrl(weekNumber int) string {
+func (s *scraper) generateUrl(weekNumber int) string {
 	urlPrefix := "https://pk0yccosw3.execute-api.us-east-2.amazonaws.com/production/v2/content-types/schedule/blt27f16f110b3363f7/week/"
 	urlSuffix := "/team/allteams?locale=en-us"
 	return urlPrefix + strconv.Itoa(weekNumber) + urlSuffix
 }
 
-func (s *Scraper) isMatchActive() bool {
+func (s *scraper) isMatchActive() bool {
 	if s.matchActive == true {
 		return true
 	}
@@ -144,7 +157,6 @@ func (s *Scraper) isMatchActive() bool {
 	for _, match := range matches {
 		if match.Status != "CONCLUDED" && match.Start.Add(-time.Hour).Before(time.Now()) {
 			s.matchActive = true
-			log.Printf("New active match: %s - %s at %s", match.Teams[0].AbbreviatedName, match.Teams[1].AbbreviatedName, match.Start)
 			return s.matchActive
 		}
 	}
