@@ -97,7 +97,7 @@ func (s *Scraper) updateActiveMatch(match *ActiveMatch) {
 		return
 	}
 
-	if !cmp.Equal(*savedMatch, *match) {
+	if match != nil && !cmp.Equal(*savedMatch, *match) {
 		log.Printf("Active match change detected")
 		go s.start()
 	}
