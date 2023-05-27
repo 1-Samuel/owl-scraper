@@ -46,7 +46,7 @@ func main() {
 			select {
 			case <-activeMatchTicker.C:
 				if scraper.isMatchActive() {
-					scraper.activeMatch()
+					scraper.fetchActiveMatch()
 				}
 			}
 		}

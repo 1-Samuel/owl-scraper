@@ -25,6 +25,12 @@ func (m MongodbRepo) PersistActive(activeMatch ActiveMatch) error {
 	return err
 }
 
+func (m MongodbRepo) DeleteActiveMatch(uid string) error {
+	filter := bson.D{{"uid", uid}}
+	_, err := m.db.Collection("activeMatches").DeleteOne(context.TODO(), filter)
+	return err
+}
+
 func (m MongodbRepo) Get() ([]Match, error) {
 	opts := options.Find().SetSort(bson.D{{"start", 1}})
 	cur, err := m.db.Collection("matches").Find(context.TODO(), bson.D{}, opts)
@@ -36,4 +42,14 @@ func (m MongodbRepo) Get() ([]Match, error) {
 		return nil, err
 	}
 	return results, nil
+}
+
+func (m MongodbRepo) GetActive() (*ActiveMatch, error) {
+	filter := bson.D{{"uid", uid}}
+	var result ActiveMatch
+	err := m.db.Collection("activeMatches").FindOne(context.TODO(), filter).Decode(&result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

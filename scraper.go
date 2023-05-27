@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/google/go-cmp/cmp"
 	"log"
 	"net/http"
 	"strconv"
@@ -12,29 +13,30 @@ type Repository interface {
 	Get() ([]Match, error)
 	Persist(match Match) error
 	PersistActive(activeMatch ActiveMatch) error
+	DeleteActiveMatch(uid string) error
+	GetActive() (*ActiveMatch, error)
 }
 
-type scraper struct {
+const uid = "87034ff4-b307-4c02-82ab-49a97e33b490"
+
+type Scraper struct {
 	repo        Repository
-	matchCount  int
-	pageCount   int
-	matchActive bool
-	seenMatches map[string]bool
+	activeMatch *ActiveMatch
 }
 
-func New(repo Repository) *scraper {
-	return &scraper{
-		repo:        repo,
-		seenMatches: make(map[string]bool),
+func New(repo Repository) *Scraper {
+	return &Scraper{
+		repo: repo,
 	}
 }
 
-func (s *scraper) start() {
-	s.fetch(1)
-	log.Printf("Fetched %d matches from %d pages", s.matchCount, s.pageCount)
+func (s *Scraper) start() {
+	log.Printf("Started fetching matches ...")
+	matchCount, pageCount := s.fetch(1)
+	log.Printf("Fetched %d matches from %d pages", matchCount, pageCount)
 }
 
-func (s *scraper) activeMatch() {
+func (s *Scraper) fetchActiveMatch() {
 	url := "https://pk0yccosw3.execute-api.us-east-2.amazonaws.com/production/v2/content-types/match-ticker/?locale=en-us"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -54,8 +56,7 @@ func (s *scraper) activeMatch() {
 	defer resp.Body.Close() // TODO log error
 
 	if resp.StatusCode != http.StatusOK {
-		s.matchActive = false
-		s.start()
+		s.updateActiveMatch(nil)
 		return
 	}
 
@@ -63,35 +64,51 @@ func (s *scraper) activeMatch() {
 	err = json.NewDecoder(resp.Body).Decode(response)
 
 	if err != nil || len(response.Data) == 0 {
-		s.matchActive = false
-		s.start()
+		s.updateActiveMatch(nil)
+		return
 	}
 
-	for _, data := range response.Data {
-		match := ActiveMatch{
-			UID:         data.Uid,
-			Teams:       convertTeamsColored(data),
-			Status:      data.Status,
-			TimeToMatch: data.TimeToMatch,
-			LinkToMatch: data.LinkToMatch,
-			IsEncore:    data.IsEncore,
-			MatchDate:   time.Time(data.MatchDate),
-		}
-		err := s.repo.PersistActive(match)
-		if err != nil {
-			panic(err)
-		}
-		if !s.seenMatches[match.UID] {
-			s.seenMatches[match.UID] = true
-			s.start()
-			log.Printf("New active match: %s - %s at %s", match.Teams[0].AbbreviatedName, match.Teams[1].AbbreviatedName, match.MatchDate)
-		}
-		log.Printf("Found active match %s %d:%d %s at %s", match.Teams[0].AbbreviatedName, match.Teams[0].Score, match.Teams[1].Score, match.Teams[1].AbbreviatedName, match.MatchDate)
+	data := response.Data[0]
+	match := &ActiveMatch{
+		UID:         uid,
+		Teams:       convertTeamsColored(data),
+		Status:      data.Status,
+		TimeToMatch: 0,
+		LinkToMatch: data.LinkToMatch,
+		IsEncore:    data.IsEncore,
+		MatchDate:   time.Time(data.MatchDate),
 	}
+	log.Printf("Found active match %s %d:%d %s at %s - %s", match.Teams[0].AbbreviatedName, match.Teams[0].Score, match.Teams[1].Score, match.Teams[1].AbbreviatedName, match.MatchDate, match.Status)
+	s.updateActiveMatch(match)
 
 }
 
-func (s *scraper) fetch(weekNumber int) {
+func (s *Scraper) updateActiveMatch(match *ActiveMatch) {
+	savedMatch, err := s.repo.GetActive()
+
+	if (err != nil || savedMatch != nil) && match == nil {
+		log.Printf("No active match found => clearing active match")
+		err := s.repo.DeleteActiveMatch(uid)
+		if err != nil {
+			panic(err)
+		}
+		s.activeMatch = nil
+		go s.start()
+		return
+	}
+
+	if !cmp.Equal(*savedMatch, *match) {
+		log.Printf("Active match change detected")
+		go s.start()
+	}
+
+	err = s.repo.PersistActive(*match)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (s *Scraper) fetch(weekNumber int) (matchCount int, pageCount int) {
 	url := s.generateUrl(weekNumber)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -125,29 +142,29 @@ func (s *scraper) fetch(weekNumber int) {
 			if err != nil {
 				panic(err)
 			} else {
-				s.matchCount++
+				matchCount++
 			}
 		}
 	}
-
-	s.pageCount++
 
 	pagination := response.Data.TableData.Pagination
 
 	if pagination.NextPage < pagination.TotalPages {
 		time.Sleep(2 * time.Second)
-		s.fetch(pagination.NextPage)
+		fetchedMatches, fetchedPages := s.fetch(pagination.NextPage)
+		return fetchedMatches + matchCount, fetchedPages + 1
 	}
+	return matchCount, 1
 }
 
-func (s *scraper) generateUrl(weekNumber int) string {
+func (s *Scraper) generateUrl(weekNumber int) string {
 	urlPrefix := "https://pk0yccosw3.execute-api.us-east-2.amazonaws.com/production/v2/content-types/schedule/blt27f16f110b3363f7/week/"
 	urlSuffix := "/team/allteams?locale=en-us"
 	return urlPrefix + strconv.Itoa(weekNumber) + urlSuffix
 }
 
-func (s *scraper) isMatchActive() bool {
-	if s.matchActive == true {
+func (s *Scraper) isMatchActive() bool {
+	if s.activeMatch != nil {
 		return true
 	}
 	matches, err := s.repo.Get()
@@ -156,11 +173,10 @@ func (s *scraper) isMatchActive() bool {
 	}
 	for _, match := range matches {
 		if match.Status != "CONCLUDED" && match.Start.Add(-time.Hour).Before(time.Now()) {
-			s.matchActive = true
-			return s.matchActive
+			return true
 		}
 	}
-	return s.matchActive
+	return false
 }
 
 func setHeaders(req *http.Request) {
