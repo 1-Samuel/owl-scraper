@@ -267,10 +267,10 @@ type Events struct {
 	EventBanner EventBanner `json:"eventBanner"`
 }
 type Pagination struct {
-	CurrentPage  int `json:"currentPage"`
-	TotalPages   int `json:"totalPages"`
-	NextPage     int `json:"nextPage"`
-	PreviousPage any `json:"previousPage"`
+	CurrentPage  int  `json:"currentPage"`
+	TotalPages   int  `json:"totalPages"`
+	NextPage     *int `json:"nextPage"`
+	PreviousPage any  `json:"previousPage"`
 }
 type TableData struct {
 	Name        string     `json:"name"`

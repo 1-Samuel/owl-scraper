@@ -149,9 +149,9 @@ func (s *Scraper) fetch(weekNumber int) (matchCount int, pageCount int) {
 
 	pagination := response.Data.TableData.Pagination
 
-	if pagination.NextPage < pagination.TotalPages {
+	if pagination.NextPage != nil {
 		time.Sleep(2 * time.Second)
-		fetchedMatches, fetchedPages := s.fetch(pagination.NextPage)
+		fetchedMatches, fetchedPages := s.fetch(*pagination.NextPage)
 		return fetchedMatches + matchCount, fetchedPages + 1
 	}
 	return matchCount, 1
